@@ -34,7 +34,8 @@ the manner in which the weight lifting exercise was performed.
 ### Approach
 Exploratory data analysis was peformed to determine which variables to use in the
 model.  Non-numeric columns, except for the outcome column, classe, were discarded.
-Also discarded were numeric columns with NA values.  This left a set of 51 predictors.
+Also discarded were numeric columns with NA values and those columns containing the
+record number, username, timestamps, and window information.  This left a set of 51 predictors.
 
 ```{r, include=FALSE}
 alltrain <- read.table('pml-training.csv', header = TRUE, sep = ',', stringsAsFactors=FALSE)
