@@ -1,0 +1,203 @@
+```{r, include=FALSE}
+library(caret)
+library(doParallel)
+no_cores <- detectCores() - 1
+myseed <- 12345
+setwd("~/Documents/workspace/08 Practical Machine Learning/Project")
+```
+
+---
+title: "###Practical Machine Learning"
+date: November 2015
+output: 
+  html_document:
+    keep_md: true
+---
+<style type="text/css">
+
+body, td {
+   font-size: 12px;
+}
+code.r{
+  font-size: 9px;
+}
+pre {
+  font-size: 9px
+}
+</style>
+
+### Introduction
+This report describes the analysis performed to create a machine learning
+algorithm to predict the classification assigned to each of 20 records representing
+the manner in which the weight lifting exercise was performed.  
+
+### Approach
+Exploratory data analysis was peformed to determine which variables to use in the
+model.  Non-numeric columns, except for the outcome column, classe, were discarded.
+Also discarded were numeric columns with NA values.  This left a set of 51 predictors.
+
+```{r, include=FALSE}
+alltrain <- read.table('pml-training.csv', header = TRUE, sep = ',', stringsAsFactors=FALSE)
+alltrain$classe <- as.factor(alltrain$classe)
+inTrain <- createDataPartition(y=alltrain$classe, p=0.7, list=FALSE)
+mytrain <- alltrain[inTrain,]
+mytest <- alltrain[-inTrain,]
+dim(mytrain)
+dim(mytest)
+
+
+str(mytrain[,1:80])
+str(mytrain[,81:160])
+
+flist <- c("classe",
+        "roll_belt",
+        "pitch_belt",
+        "yaw_belt",
+        "total_accel_belt",
+        "gyros_belt_x",
+        "gyros_belt_y",
+        "gyros_belt_z",
+        "accel_belt_x",
+        "accel_belt_y",
+        "accel_belt_z",
+        "magnet_belt_x",
+        "magnet_belt_y",
+        "magnet_belt_z",
+        "roll_arm",
+        "pitch_arm",
+        "yaw_arm",
+        "total_accel_arm",
+        "gyros_arm_x",
+        "gyros_arm_y",
+        "gyros_arm_z",
+        "accel_arm_x",
+        "accel_arm_y",
+        "accel_arm_z",
+        "magnet_arm_x",
+        "magnet_arm_y",
+        "magnet_arm_z",
+        "roll_dumbbell",
+        "pitch_dumbbell",
+        "yaw_dumbbell",
+        "total_accel_dumbbell",
+        "gyros_dumbbell_x",
+        "gyros_dumbbell_y",
+        "gyros_dumbbell_z",
+        "accel_dumbbell_x",
+        "accel_dumbbell_y",
+        "accel_dumbbell_z",
+        "magnet_dumbbell_x",
+        "magnet_dumbbell_y",
+        "magnet_dumbbell_z",
+        "roll_forearm",
+        "pitch_forearm",
+        "yaw_forearm",
+        "gyros_forearm_x",
+        "gyros_forearm_y",
+        "gyros_forearm_z",
+        "accel_forearm_x",
+        "accel_forearm_y",
+        "accel_forearm_z",
+        "magnet_forearm_x",
+        "magnet_forearm_y",
+        "magnet_forearm_z"
+        )
+
+mytrain <- subset(mytrain, select=flist)
+
+for (i in 1:length(flist)) {
+        print(flist[i])
+        print(sum(is.na(mytrain[,i])))
+}
+```
+
+The training file provided in the assignment was split 70/30 into training and
+test datasets. 
+The following iterative process was followed to identify the
+model with the best accurarcy.
+
+1. Select model type and parameters.
+2. Train the model using the training set.
+3. Evaluate the model using the test set.
+4. Repeat steps 2 - 4 with a different model type and/or parameters.
+
+The Stochastic Gradient Boosting model type was used with a 10-fold
+cross-validation.  Preprocessing activities centering and scaling were applied.
+Parameters that controlled tree complexity (interaction.depth) and number of 
+iterations (n.trees) were adjusted, while the learning rate parameter (shrinkage) 
+and minium number of training set samples in a node to commece splitting 
+(m.minobsinnode) were left constant.
+
+### Initial Model
+The initial model produced a 0.9616387 accuracy rate on the training subset and
+a 0.9615973 accuracy rate on the test set.  This corresponds to an out of sample
+error of 0.0383613 and 0.0384027, respectively.
+
+```{r, cache=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+fitControl <- trainControl(
+        method = "cv",
+        number = 10)
+
+set.seed(myseed)
+cl <- makeCluster(no_cores)
+registerDoParallel(cl)
+gbmFit1 <- train(classe ~ ., data = mytrain,
+                 method = "gbm",
+                 preProc = c('center', 'scale'),
+                 trControl = fitControl,
+                 verbose = FALSE)
+stopCluster(cl)
+gbmFit1
+
+mypred <- predict(gbmFit1, newdata = mytest)
+table(mypred,mytest$classe)
+
+mypct <- sum(mypred == mytest$classe)/length(mypred)
+mypct
+
+ggplot(gbmFit1)
+```
+
+### Final Model
+Several additional models were fitted with increases to the number of iterations 
+(n.trees).  These showed increasng accuracy on both the training and the test
+subset.  
+
+For the final model, the tree complexity was tweaked, resulting in a
+model that produced accuracy rates of 0.9932294 and 0.9950722 on the training 
+and test datasets, respectively.  This corresponds to error rates of 0.0067706 
+and 0.0049278.  These low error rates were corroborated by correctly predicting
+all 20 values in the project test dataset.
+
+```{r, cache=TRUE, echo=TRUE, message=FALSE, warning=FALSE}
+fitControl <- trainControl(
+        method = "cv",
+        number = 10)
+        
+gbmGrid <-  expand.grid(interaction.depth = c(3, 6, 9),
+                        n.trees = (6:10)*25,
+                        shrinkage = 0.1,
+                        n.minobsinnode = 10)
+set.seed(myseed)
+cl <- makeCluster(no_cores)
+registerDoParallel(cl)
+
+gbmFit6 <- train(classe ~ ., data = mytrain,
+                 method = "gbm",
+                 preProc = c('center', 'scale'),
+                 trControl = fitControl,
+                 verbose = FALSE,
+                 tuneGrid = gbmGrid)
+
+stopCluster(cl)
+gbmFit6
+
+mypred <- predict(gbmFit6, newdata = mytest)
+table(mypred,mytest$classe)
+
+mypct <- sum(mypred == mytest$classe)/length(mypred)
+mypct
+
+ggplot(gbmFit6)
+```
+
